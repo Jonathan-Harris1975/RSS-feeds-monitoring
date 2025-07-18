@@ -1,92 +1,52 @@
+// server.js (ESM-compliant, Render-compatible)
 
-import express from 'express';
-import fetch from 'node-fetch';
-import xml2js from 'xml2js';
-import fs from 'fs-extra';
-import * as cheerio from 'cheerio
-const app = express();
-app.use(express.json());
+import express from 'express'; import fs from 'fs/promises'; import path from 'path'; import { fileURLToPath } from 'url'; import xml2js from 'xml2js'; import fetch from 'node-fetch'; import * as cheerio from 'cheerio';
 
-const PORT = process.env.PORT || 10000;
-const FEEDS_FILE = './feeds.txt';
-const PREVIOUS_FILE = './previous.json';
+const __filename = fileURLToPath(import.meta.url); const __dirname = path.dirname(__filename);
 
-// Utility to load feeds from feeds.txt
-const loadFeeds = async () => {
+const app = express(); const PORT = process.env.PORT || 10000;
+
+app.use(express.json({ limit: '10mb' }));
+
+const fetchArticleText = async (url) => { try { const response = await fetch(url); const html = await response.text(); const $ = cheerio.load(html); const paragraphs = $('p') .map((_, el) => $(el).text()) .get() .join(' ') .trim(); return paragraphs; } catch (err) { return Failed to fetch article text: ${err.message}; } };
+
+app.post('/process-feeds', async (req, res) => { try { const feedsFilePath = path.join(__dirname, 'feeds.txt'); const feedsData = await fs.readFile(feedsFilePath, 'utf8'); const feeds = feedsData.split('\n').filter(Boolean);
+
+if (!Array.isArray(feeds) || feeds.length === 0) {
+  return res.status(400).json({ error: 'Invalid feeds array' });
+}
+
+const parser = new xml2js.Parser();
+const result = [];
+
+for (const feedUrl of feeds) {
   try {
-    const content = await fs.readFile(FEEDS_FILE, 'utf-8');
-    return content.split('\n').filter(line => line.trim() !== '');
-  } catch (err) {
-    console.error('Error reading feeds file:', err.message);
-    return [];
-  }
-};
+    const response = await fetch(feedUrl);
+    const xml = await response.text();
+    const parsed = await parser.parseStringPromise(xml);
+    const items = parsed.rss.channel[0].item.slice(0, 5);
 
-// Utility to fetch article HTML content and extract readable text
-const fetchArticleText = async (url) => {
-  try {
-    const response = await fetch(url);
-    const html = await response.text();
-    const $ = cheerio.load(html);
-    const paragraphs = $('p')
-      .map((_, el) => $(el).text())
-      .get()
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-    return paragraphs;
-  } catch (err) {
-    return `Failed to fetch article text: ${err.message}`;
-  }
-};
+    for (const item of items) {
+      const url = item.link[0];
+      const articleText = await fetchArticleText(url);
 
-// Core feed processing endpoint
-app.get('/process-feeds', async (req, res) => {
-  const feeds = await loadFeeds();
-
-  if (!Array.isArray(feeds) || feeds.length === 0) {
-    return res.status(400).json({ error: 'No feeds found.' });
-  }
-
-  const parser = new xml2js.Parser({ explicitArray: false });
-  let newItems = [];
-
-  const previous = await fs.readJson(PREVIOUS_FILE, { throws: false }) || {};
-
-  for (const feedUrl of feeds) {
-    try {
-      const response = await fetch(feedUrl);
-      const xml = await response.text();
-      const json = await parser.parseStringPromise(xml);
-      const items = json.rss?.channel?.item || [];
-
-      for (const item of Array.isArray(items) ? items : [items]) {
-        const id = item.guid || item.link || item.title;
-        const published = item.pubDate || item.date || '';
-        const previousFeed = previous[feedUrl] || {};
-
-        if (!previousFeed[id]) {
-          const articleText = await fetchArticleText(item.link);
-          newItems.push({
-            feed: feedUrl,
-            title: item.title,
-            link: item.link,
-            description: item.description,
-            pubDate: published,
-            content: articleText
-          });
-        }
-
-        previousFeed[id] = published;
-        previous[feedUrl] = previousFeed;
-      }
-    } catch (err) {
-      console.error(`Failed to process ${feedUrl}:`, err.message);
+      result.push({
+        feed: feedUrl,
+        title: item.title[0],
+        url,
+        date: item.pubDate ? item.pubDate[0] : null,
+        description: item.description ? item.description[0] : null,
+        article: articleText
+      });
     }
+  } catch (err) {
+    console.error(`Error processing feed ${feedUrl}:`, err);
   }
+}
 
-  await fs.writeJson(PREVIOUS_FILE, previous, { spaces: 2 });
-  res.json(newItems);
-});
+res.json(result);
 
-app.listen(PORT, () => console.log(`RSS monitor server running on port ${PORT}`));
+} catch (err) { res.status(500).json({ error: 'Server error: ' + err.message }); } });
+
+app.listen(PORT, () => { console.log(📰 Feed processor running on port ${PORT}); });
+
