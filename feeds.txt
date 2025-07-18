@@ -14,7 +14,7 @@ https://techcrunch.com/feed/
 https://www.engadget.com/rss.xml
 https://www.wired.com/feed/rss
 https://arstechnica.com/tag/self-driving-cars/feed/
-https://gizmodo.com/feed
+https://gizmodo.com/tech/artificial-intelligence/feed
 https://www.theverge.com/rss/index.xml
 https://www.aiandhealth.com/blog-feed.xml
 https://savanamed.com/feed/
