@@ -1,63 +1,59 @@
 import express from 'express';
-import fs from 'fs/promises';
+import fs from 'fs-extra';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
+import cheerio from 'cheerio';
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-const FEEDS_FILE = './feeds.txt';
-const DATA_FILE = './data.json';
+app.use(express.json({ limit: '10mb' }));
 
-const loadFeeds = async () => {
-  const text = await fs.readFile(FEEDS_FILE, 'utf-8');
-  return text.split('\n').filter(Boolean);
-};
+// 🧠 In-memory tracking for processed links
+const seen = new Set();
 
-const loadData = async () => {
-  try {
-    const raw = await fs.readFile(DATA_FILE, 'utf-8');
-    return JSON.parse(raw);
-  } catch {
-    return {};
+app.post('/process-feeds', async (req, res) => {
+  const { feeds } = req.body;
+
+  if (!feeds || !Array.isArray(feeds)) {
+    return res.status(400).json({ error: 'Invalid feeds array' });
   }
-};
 
-const saveData = async (data) => {
-  await fs.writeFile(DATA_FILE, JSON.stringify(data, null, 2));
-};
-
-const checkFeeds = async () => {
-  const feeds = await loadFeeds();
-  const previous = await loadData();
-  const updated = [];
+  const results = [];
 
   for (const url of feeds) {
     try {
-      const res = await fetch(url);
-      const xml = await res.text();
-      const parsed = await parseStringPromise(xml);
-      const item = parsed.rss?.channel?.[0]?.item?.[0];
-      const latestGuid = item?.guid?.[0] || item?.link?.[0];
-      if (!latestGuid) continue;
+      const response = await fetch(url);
+      const xml = await response.text();
+      const json = await parseStringPromise(xml);
+      const items = json.rss?.channel?.[0]?.item || [];
 
-      if (previous[url] !== latestGuid) {
-        updated.push({ url, latest: item });
-        previous[url] = latestGuid;
+      for (const item of items) {
+        const title = item.title?.[0];
+        const link = item.link?.[0];
+        const description = item.description?.[0];
+
+        if (!link || seen.has(link)) continue;
+        seen.add(link);
+
+        // Optional: scrape main content with Cheerio
+        let fullContent = '';
+        try {
+          const articleRes = await fetch(link);
+          const html = await articleRes.text();
+          const $ = cheerio.load(html);
+          fullContent = $('article').text().trim().slice(0, 800); // basic content grab
+        } catch {
+          fullContent = description || 'No content.';
+        }
+
+        results.push({ title, link, content: fullContent });
       }
     } catch (err) {
-      console.error('Feed error:', url, err.message);
+      console.error(`Feed error for ${url}:`, err.message);
     }
   }
 
-  await saveData(previous);
-  return updated;
-};
-
-app.get('/changed-feeds', async (req, res) => {
-  const updated = await checkFeeds();
-  res.json(updated);
+  res.json({ items: results });
 });
 
-app.listen(PORT, () => {
-  console.log(`RSS monitor running on port ${PORT}`);
-});
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => console.log(`🚀 Feed monitor running on port ${PORT}`));
