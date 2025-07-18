@@ -3,6 +3,7 @@ import fs from 'fs-extra';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
 import * as cheerio from 'cheerio';
+
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
@@ -33,13 +34,13 @@ app.post('/process-feeds', async (req, res) => {
         if (!link || seen.has(link)) continue;
         seen.add(link);
 
-        // Optional: scrape main content with Cheerio
+        // Scrape main content with Cheerio (fallback to description)
         let fullContent = '';
         try {
           const articleRes = await fetch(link);
           const html = await articleRes.text();
           const $ = cheerio.load(html);
-          fullContent = $('article').text().trim().slice(0, 800); // basic content grab
+          fullContent = $('article').text().trim().slice(0, 800);
         } catch {
           fullContent = description || 'No content.';
         }
@@ -55,11 +56,6 @@ app.post('/process-feeds', async (req, res) => {
 });
 
 const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => console.log(`🚀 Feed monitor running on port ${PORT}`));
-try {
-  app.listen(PORT, () => {
-    console.log(`🚀 Feed monitor running on port ${PORT}`);
-  });
-} catch (err) {
-  console.error('Server failed to start:', err);
-}
+app.listen(PORT, () => {
+  console.log(`🚀 Feed monitor running on port ${PORT}`);
+});
