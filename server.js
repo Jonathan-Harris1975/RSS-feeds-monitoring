@@ -3,8 +3,7 @@ import express from 'express';
 import fetch from 'node-fetch';
 import xml2js from 'xml2js';
 import fs from 'fs-extra';
-import cheerio from 'cheerio';
-
+import * as cheerio from 'cheerio
 const app = express();
 app.use(express.json());
 
