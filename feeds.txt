@@ -1,0 +1,2 @@
+https://example.com/feed1.xml
+https://example.com/feed2.xml
