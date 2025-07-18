@@ -57,3 +57,10 @@ app.post('/process-feeds', async (req, res) => {
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => console.log(`🚀 Feed monitor running on port ${PORT}`));
+try {
+  app.listen(PORT, () => {
+    console.log(`🚀 Feed monitor running on port ${PORT}`);
+  });
+} catch (err) {
+  console.error('Server failed to start:', err);
+}
