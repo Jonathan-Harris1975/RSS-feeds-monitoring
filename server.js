@@ -2,8 +2,7 @@ import express from 'express';
 import fs from 'fs-extra';
 import fetch from 'node-fetch';
 import { parseStringPromise } from 'xml2js';
-import cheerio from 'cheerio';
-
+import * as cheerio from 'cheerio';
 const app = express();
 app.use(express.json({ limit: '10mb' }));
 
