@@ -1,35 +1,93 @@
-import express from 'express'; import fs from 'fs/promises'; import { parseStringPromise } from 'xml2js'; import fetch from 'node-fetch'; import cheerio from 'cheerio';
 
-const app = express(); app.use(express.json());
+import express from 'express';
+import fetch from 'node-fetch';
+import xml2js from 'xml2js';
+import fs from 'fs-extra';
+import cheerio from 'cheerio';
 
-const fetchArticleText = async (url) => { try { const response = await fetch(url); const html = await response.text(); const $ = cheerio.load(html); const paragraphs = $('p').map((_, el) => $(el).text()).get(); return paragraphs.join(' ').replace(/\s+/g, ' ').trim(); } catch (err) { return Failed to fetch article text: ${err.message}; } };
+const app = express();
+app.use(express.json());
 
-const processFeed = async (url) => { try { const response = await fetch(url); const xml = await response.text(); const parsed = await parseStringPromise(xml); const items = parsed.rss?.channel?.[0]?.item || parsed.feed?.entry || [];
+const PORT = process.env.PORT || 10000;
+const FEEDS_FILE = './feeds.txt';
+const PREVIOUS_FILE = './previous.json';
 
-const articles = await Promise.all(
-  items.slice(0, 5).map(async (item) => {
-    const link = item.link?.[0] || item.link?.[0]?.$.href || '';
-    const title = item.title?.[0] || '';
-    const description = item.description?.[0] || item.summary?.[0] || '';
-    const pubDate = item.pubDate?.[0] || item.updated?.[0] || '';
-    const articleText = link ? await fetchArticleText(link) : '';
+// Utility to load feeds from feeds.txt
+const loadFeeds = async () => {
+  try {
+    const content = await fs.readFile(FEEDS_FILE, 'utf-8');
+    return content.split('\n').filter(line => line.trim() !== '');
+  } catch (err) {
+    console.error('Error reading feeds file:', err.message);
+    return [];
+  }
+};
 
-    return {
-      feed: url,
-      title,
-      date: pubDate,
-      description,
-      url: link,
-      articleText
-    };
-  })
-);
+// Utility to fetch article HTML content and extract readable text
+const fetchArticleText = async (url) => {
+  try {
+    const response = await fetch(url);
+    const html = await response.text();
+    const $ = cheerio.load(html);
+    const paragraphs = $('p')
+      .map((_, el) => $(el).text())
+      .get()
+      .join(' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    return paragraphs;
+  } catch (err) {
+    return `Failed to fetch article text: ${err.message}`;
+  }
+};
 
-return articles;
+// Core feed processing endpoint
+app.get('/process-feeds', async (req, res) => {
+  const feeds = await loadFeeds();
 
-} catch (err) { return [{ feed: url, error: err.message }]; } };
+  if (!Array.isArray(feeds) || feeds.length === 0) {
+    return res.status(400).json({ error: 'No feeds found.' });
+  }
 
-app.get('/process-feeds', async (req, res) => { try { const feedsText = await fs.readFile('feeds.txt', 'utf-8'); const feeds = feedsText.split('\n').filter(Boolean); const allResults = await Promise.all(feeds.map(processFeed)); res.json(allResults.flat()); } catch (err) { res.status(500).json({ error: err.message }); } });
+  const parser = new xml2js.Parser({ explicitArray: false });
+  let newItems = [];
 
-const PORT = process.env.PORT || 3000; app.listen(PORT, () => console.log(🚀 RSS monitor listening on port ${PORT}));
+  const previous = await fs.readJson(PREVIOUS_FILE, { throws: false }) || {};
 
+  for (const feedUrl of feeds) {
+    try {
+      const response = await fetch(feedUrl);
+      const xml = await response.text();
+      const json = await parser.parseStringPromise(xml);
+      const items = json.rss?.channel?.item || [];
+
+      for (const item of Array.isArray(items) ? items : [items]) {
+        const id = item.guid || item.link || item.title;
+        const published = item.pubDate || item.date || '';
+        const previousFeed = previous[feedUrl] || {};
+
+        if (!previousFeed[id]) {
+          const articleText = await fetchArticleText(item.link);
+          newItems.push({
+            feed: feedUrl,
+            title: item.title,
+            link: item.link,
+            description: item.description,
+            pubDate: published,
+            content: articleText
+          });
+        }
+
+        previousFeed[id] = published;
+        previous[feedUrl] = previousFeed;
+      }
+    } catch (err) {
+      console.error(`Failed to process ${feedUrl}:`, err.message);
+    }
+  }
+
+  await fs.writeJson(PREVIOUS_FILE, previous, { spaces: 2 });
+  res.json(newItems);
+});
+
+app.listen(PORT, () => console.log(`RSS monitor server running on port ${PORT}`));
