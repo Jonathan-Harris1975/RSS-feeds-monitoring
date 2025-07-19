@@ -7,7 +7,6 @@ import fs from 'fs';
 
 const app = express();
 const PORT = process.env.PORT || 3000;
-
 const CACHE_FILE = './cache.json';
 
 // Load previously seen article links from cache
@@ -44,6 +43,12 @@ const fetchArticleText = async (url) => {
   }
 };
 
+// Convert to ISO format safely
+const toISODate = (dateStr) => {
+  const parsed = new Date(dateStr);
+  return isNaN(parsed.getTime()) ? null : parsed.toISOString();
+};
+
 // Process feeds and return new articles with metadata
 const processFeeds = async () => {
   const urls = await loadFeedUrls();
@@ -60,7 +65,8 @@ const processFeeds = async () => {
         const title = item.title?.[0] || '';
         const link = item.link?.[0] || '';
         const description = item.description?.[0] || '';
-        const pubDate = item.pubDate?.[0] || '';
+        const pubDateRaw = item.pubDate?.[0] || '';
+        const isoDate = toISODate(pubDateRaw);
 
         if (!seenLinks.has(link)) {
           const articleText = await fetchArticleText(link);
@@ -68,7 +74,7 @@ const processFeeds = async () => {
             feed: feedUrl,
             title,
             url: link,
-            date: pubDate,
+            date: isoDate,
             description,
             article: articleText
           });
@@ -80,9 +86,7 @@ const processFeeds = async () => {
     }
   }
 
-  // Save updated cache
   fs.writeFileSync(CACHE_FILE, JSON.stringify([...seenLinks]), 'utf-8');
-
   return newArticles;
 };
 
