@@ -10,9 +10,6 @@ https://hanhdbrown.com/ai/feed/
 https://intelligence.org/blog/feed/
 https://bair.berkeley.edu/blog/feed.xml
 https://chatbotsmagazine.com/feed
-https://techcrunch.com/feed/
-https://www.engadget.com/rss.xml
-https://www.wired.com/feed/rss
 https://arstechnica.com/tag/self-driving-cars/feed/
 https://gizmodo.com/tech/artificial-intelligence/feed
 https://www.theverge.com/rss/index.xml
