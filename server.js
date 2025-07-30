@@ -8,20 +8,24 @@ import fs from 'fs/promises';
 const app = express();
 const PORT = process.env.PORT || 3000;
 const CACHE_FILE = './cache.json';
+const BATCH_SIZE = 5; // Number of feeds to process per request
+
+// Track the current batch starting index
+let currentBatchStart = 0;
 
 // Load previously seen article links from cache
 let seenLinks = new Set();
-  try {
-    await fs.access(CACHE_FILE);
-    const data = await readFile(CACHE_FILE, 'utf-8');
-    seenLinks = new Set(JSON.parse(data));
-  } catch (error) {
-    if (error.code === 'ENOENT') {
-      // File does not exist, proceed with empty seenLinks
-    } else {
-      console.error('Error accessing cache file:', error);
-    }
+try {
+  await fs.access(CACHE_FILE);
+  const data = await readFile(CACHE_FILE, 'utf-8');
+  seenLinks = new Set(JSON.parse(data));
+} catch (error) {
+  if (error.code === 'ENOENT') {
+    // File does not exist, proceed with empty seenLinks
+  } else {
+    console.error('Error accessing cache file:', error);
   }
+}
 
 // Load feed URLs from feeds.txt
 const loadFeedUrls = async () => {
@@ -30,6 +34,22 @@ const loadFeedUrls = async () => {
     .split('\n')
     .map(line => line.trim())
     .filter(line => line && !line.startsWith('#'));
+};
+
+// Get the current batch of feed URLs
+const getCurrentBatch = async () => {
+  const allFeeds = await loadFeedUrls();
+  const batch = [];
+  
+  for (let i = 0; i < BATCH_SIZE; i++) {
+    const index = (currentBatchStart + i) % allFeeds.length;
+    batch.push(allFeeds[index]);
+  }
+  
+  // Update the batch start for next time
+  currentBatchStart = (currentBatchStart + 1) % allFeeds.length;
+  
+  return batch;
 };
 
 // Scrape article content using Cheerio
@@ -58,10 +78,10 @@ const toISODate = (dateStr) => {
 
 // Process feeds and return new articles with metadata
 const processFeeds = async () => {
-  const urls = await loadFeedUrls();
+  const feedUrls = await getCurrentBatch();
   const newArticles = [];
 
-  for (const feedUrl of urls) {
+  for (const feedUrl of feedUrls) {
     try {
       const res = await fetch(feedUrl);
       const xml = await res.text();
@@ -107,7 +127,13 @@ const processFeeds = async () => {
 app.get('/process-feeds', async (req, res) => {
   try {
     const data = await processFeeds();
-    res.json(data);
+    res.json({
+      data,
+      batchInfo: {
+        currentPosition: currentBatchStart,
+        totalFeeds: (await loadFeedUrls()).length
+      }
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
