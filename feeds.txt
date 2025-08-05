@@ -15,7 +15,6 @@ https://gizmodo.com/tech/artificial-intelligence/feed
 https://www.theverge.com/rss/index.xml
 https://www.aiandhealth.com/blog-feed.xml
 https://savanamed.com/feed/
-https://www.viz.ai/blog/feed
 https://radiology.healthairegister.com/feed/
 saiva.ai/resources/blogs/feed/
 https://blog.neurocare.ai
