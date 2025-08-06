@@ -16,26 +16,22 @@ const CACHE_FILE = path.join(__dirname, 'seen.json');
 let seenLinks = new Set();
 let currentBatchStart = 0;
 
-const loadFeedUrls = () => {
-  return fs.readFileSync(FEED_FILE, 'utf8')
+const loadFeedUrls = () =>
+  fs.readFileSync(FEED_FILE, 'utf8')
     .split(/\r?\n/)
     .filter(Boolean);
-};
 
 const getCurrentBatch = () => {
-  const allFeeds = loadFeedUrls();
+  const all = loadFeedUrls();
   if (fs.existsSync(STATE_FILE)) {
-    const state = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
-    currentBatchStart = state.index || 0;
+    const st = JSON.parse(fs.readFileSync(STATE_FILE, 'utf8'));
+    currentBatchStart = st.index || 0;
   }
-
   const batch = [];
   for (let i = 0; i < BATCH_SIZE; i++) {
-    const idx = (currentBatchStart + i) % allFeeds.length;
-    batch.push(allFeeds[idx]);
+    batch.push(all[(currentBatchStart + i) % all.length]);
   }
-
-  currentBatchStart = (currentBatchStart + BATCH_SIZE) % allFeeds.length;
+  currentBatchStart = (currentBatchStart + BATCH_SIZE) % all.length;
   fs.writeFileSync(STATE_FILE, JSON.stringify({ index: currentBatchStart }), 'utf8');
   return batch;
 };
@@ -45,54 +41,46 @@ const fetchArticleText = async (url) => {
     const res = await fetch(url);
     const html = await res.text();
     const $ = cheerio.load(html);
-    return $('p')
-      .map((_, el) => $(el).text())
-      .get()
-      .join(' ')
-      .replace(/\s+/g, ' ')
-      .trim();
-  } catch (err) {
-    return `Failed to fetch article: ${err.message}`;
+    return $('p').map((_, el) => $(el).text()).get().join(' ').replace(/\s+/g, ' ').trim();
+  } catch (e) {
+    return `Error fetching article: ${e.message}`;
   }
 };
 
-const toISODate = (dateStr) => {
-  const dt = new Date(dateStr);
-  return isNaN(dt.getTime()) ? null : dt.toISOString();
+const toISODate = (s) => {
+  const d = new Date(s);
+  return isNaN(d.getTime()) ? null : d.toISOString();
 };
 
 const processFeeds = async () => {
-  const batch = getCurrentBatch();
-  const newArticles = [];
+  const urls = getCurrentBatch();
   const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-
-  for (const url of batch) {
+  const out = [];
+  for (const url of urls) {
     try {
       const feed = await parser.parseURL(url);
       for (const item of feed.items) {
-        const iso = toISODate(item.pubDate || item.isoDate);
-        if (!iso || new Date(iso).getTime() < cutoff) continue;
-        const link = item.link;
-        if (!seenLinks.has(link)) {
-          const txt = await fetchArticleText(link);
-          newArticles.push({
+        const dateISO = toISODate(item.pubDate || item.isoDate);
+        if (!dateISO || new Date(dateISO).getTime() < cutoff) continue;
+        if (!seenLinks.has(item.link)) {
+          const fullText = await fetchArticleText(item.link);
+          out.push({
             feed: url,
             title: item.title,
-            url: link,
-            date: iso,
+            url: item.link,
+            date: dateISO,
             description: item.contentSnippet || item.summary || '',
-            article: txt
+            article: fullText
           });
-          seenLinks.add(link);
+          seenLinks.add(item.link);
         }
       }
-    } catch (err) {
-      console.error(`Feed failed: ${url}`, err.message);
+    } catch (e) {
+      console.error('Error', url, e.message);
     }
   }
-
   fs.writeFileSync(CACHE_FILE, JSON.stringify([...seenLinks]), 'utf8');
-  return newArticles;
+  return out;
 };
 
 app.get('/health', (req, res) => res.send('OK'));
@@ -103,18 +91,10 @@ app.get('/process-feeds', async (req, res) => {
   }
   try {
     const data = await processFeeds();
-    res.json({
-      data,
-      batchInfo: {
-        currentPosition: currentBatchStart,
-        totalFeeds: loadFeedUrls().length
-      }
-    });
+    res.json({ data, batchInfo: { currentPosition: currentBatchStart, totalFeeds: loadFeedUrls().length } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`✅ RSS Feed Monitor running on port ${PORT}`);
-});
+app.listen(PORT, () => console.log(`✅ Running on port ${PORT}`));
