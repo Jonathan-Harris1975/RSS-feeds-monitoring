@@ -1,40 +1,48 @@
-import express from 'express';
-import { readFile, writeFile } from 'fs/promises';
-import { parseStringPromise } from 'xml2js';
-import * as cheerio from 'cheerio';
-import fetch from 'node-fetch';
-import fs from 'fs/promises';
+// feedReader.js
+const fs = require('fs');
+const path = require('path');
+const Parser = require('rss-parser');
+const parser = new Parser();
 
-const app = express();
-const PORT = process.env.PORT || 3000;
-const CACHE_FILE = './cache.json';
-const BATCH_SIZE = 5; // Number of feeds to process per request
-
-// Track the current batch starting index
-let currentBatchStart = 0;
-
-// Load previously seen article links from cache
-let seenLinks = new Set();
-try {
-  await fs.access(CACHE_FILE);
-  const data = await readFile(CACHE_FILE, 'utf-8');
-  seenLinks = new Set(JSON.parse(data));
-} catch (error) {
-  if (error.code === 'ENOENT') {
-    // File does not exist, proceed with empty seenLinks
-  } else {
-    console.error('Error accessing cache file:', error);
+async function readNextFiveFeeds() {
+  const feedFile = path.resolve(__dirname, 'feeds.txt');
+  const lines = fs.readFileSync(feedFile, 'utf8').split(/\r?\n/).filter(Boolean);
+  // Read current index, stored separately
+  const indexFile = path.resolve(__dirname, 'state.json');
+  let state = { index: 0 };
+  if (fs.existsSync(indexFile)) {
+    state = JSON.parse(fs.readFileSync(indexFile, 'utf8'));
   }
+  const start = state.index;
+  const subset = lines.slice(start, start + 5);
+  state.index = (start + 5) % lines.length;
+  fs.writeFileSync(indexFile, JSON.stringify(state), 'utf8');
+  return subset;
 }
 
-// Load feed URLs from feeds.txt
-const loadFeedUrls = async () => {
-  const text = await readFile('./feeds.txt', 'utf-8');
-  return text
-    .split('\n')
-    .map(line => line.trim())
-    .filter(line => line && !line.startsWith('#'));
-};
+async function fetchRecentItems() {
+  const feeds = await readNextFiveFeeds();
+  const cutoff = Date.now() - 24 * 3600 * 1000;
+  const allItems = [];
+  for (const url of feeds) {
+    try {
+      const feed = await parser.parseURL(url);
+      const recent = feed.items.filter(item => {
+        const pub = new Date(item.pubDate || item.isoDate).getTime();
+        return pub >= cutoff;
+      });
+      allItems.push(...recent);
+    } catch (err) {
+      console.error('Failed feed', url, err.message);
+    }
+  }
+  return allItems;
+}
+
+// Example usage
+fetchRecentItems().then(items => {
+  console.log('Recent items:', items.map(i => i.title));
+});};
 
 // Get the current batch of feed URLs
 const getCurrentBatch = async () => {
