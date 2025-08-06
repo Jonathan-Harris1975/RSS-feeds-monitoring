@@ -3,7 +3,6 @@ const fs = require('fs');
 const path = require('path');
 const Parser = require('rss-parser');
 const cheerio = require('cheerio');
-const fetch = require('node-fetch');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -38,7 +37,7 @@ const getCurrentBatch = () => {
 
 const fetchArticleText = async (url) => {
   try {
-    const res = await fetch(url);
+    const res = await fetch(url); // ✅ built‑in fetch
     const html = await res.text();
     const $ = cheerio.load(html);
     return $('p').map((_, el) => $(el).text()).get().join(' ').replace(/\s+/g, ' ').trim();
