@@ -1,9 +1,9 @@
 {
   "name": "rss-monitor",
   "version": "1.0.0",
-  "main": "feedReader.js",
+  "main": "server.js",
   "scripts": {
-    "start": "node feedReader.js",
+    "start": "node server.js",
     "keepalive": "node Keepalive.js"
   },
   "dependencies": {
