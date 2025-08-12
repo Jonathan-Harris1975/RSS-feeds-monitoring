@@ -1,4 +1,4 @@
-
+cp > scrape.js <<'EOF'
 // scrape.js - Scrapes full articles from URLs in RSS feeds
 
 import axios from 'axios';
@@ -20,46 +20,73 @@ const loadUrls = async () => {
 };
 
 const cleanArticle = ($, container) => {
-  // Remove unwanted elements that clutter the article
+  // Remove obvious non-article elements
   container.find('aside, footer, form, .newsletter, .popup, nav, header, script, style').remove();
 
-  // Grab all decent-sized paragraphs
+  // Extract and filter paragraphs
+  const blacklist = [
+    'newsletter',
+    'subscribe',
+    'sign up',
+    'follow us',
+    'read more',
+    'more from',
+    'share this',
+    'advertisement',
+    'sponsored'
+  ];
+
   const paragraphs = container.find('p')
     .map((i, el) => $(el).text().trim())
     .get()
-    .filter((t) => t.length > 40);
+    .filter((t) => {
+      if (t.length < 40) return false; // skip tiny fragments
+      const lower = t.toLowerCase();
+      return !blacklist.some(bad => lower.includes(bad));
+    });
 
   return paragraphs.join('\n\n');
 };
 
-const scrapeArticle = async (url) => {
+const scrapeArticle = async (title, link) => {
+  console.log(`Scraping: ${title} (${link})`);
   try {
-    const { data: html } = await axios.get(url, { timeout: 10000 });
-    const $ = cheerio.load(html);
+    const { data } = await axios.get(link, { timeout: 20000 });
+    const $ = cheerio.load(data);
 
-    const container = $('article').length
-      ? $('article')
-      : $('main').length
-      ? $('main')
-      : $('body');
+    // Try to detect main content area
+    let container = $('article');
+    if (!container.length) container = $('main');
+    if (!container.length) container = $('body');
 
-    return cleanArticle($, container);
+    const text = cleanArticle($, container);
+    if (!text) return null;
 
+    const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
+    const filePath = path.join(outputDir, `${safeTitle}.txt`);
+    await fs.writeFile(filePath, text, 'utf-8');
+    return { title, link, file: filePath };
   } catch (err) {
-    console.error(`Failed to scrape ${url}:`, err.message);
-    return '';
+    console.error(`Error scraping ${link}:`, err.message);
+    return null;
   }
 };
 
-const urls = await loadUrls();
-
-for (const { title, link } of urls) {
-  const safeTitle = title.replace(/[^a-z0-9]/gi, '_').toLowerCase();
-  const content = await scrapeArticle(link);
-
-  if (content) {
-    const outputPath = path.join(outputDir, `${safeTitle}.txt`);
-    await fs.writeFile(outputPath, content);
-    console.log(`Saved: ${title}`);
+const run = async () => {
+  const urls = await loadUrls();
+  if (!urls.length) {
+    console.log('No URLs to scrape.');
+    return;
   }
-}
+
+  const results = [];
+  for (const { title, link } of urls) {
+    const res = await scrapeArticle(title, link);
+    if (res) results.push(res);
+  }
+
+  console.log(`Scraping complete. ${results.length} articles saved.`);
+};
+
+run();
+EOF
