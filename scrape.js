@@ -36,23 +36,27 @@ const cleanArticle = ($, container) => {
     'sponsored'
   ];
 
-  // Extract paragraphs
+  // Patterns for author credits or datelines
+  const creditPatterns = [
+    /^by\s+[A-Z][a-z]+(?:\s+[A-Z][a-z]+)*$/,             // By John Smith
+    /^by\s+\w+(?:\s+\w+)*\s+(?:bbc|cnn|reuters|ap)/i,    // By Name BBC/CNN/etc
+    /^[A-Z]{2,},\s+\w+\s+\d{1,2},\s+\d{4}$/,             // CITY, Month Day, Year
+    /^reporting by/i,
+    /^author:/i,
+    /^written by/i
+  ];
+
+  const isCreditLine = (text) => {
+    const lower = text.toLowerCase();
+    if (blacklist.some(bad => lower.includes(bad))) return true;
+    return creditPatterns.some(pat => pat.test(text.trim()));
+  };
+
+  // Extract paragraphs and remove junk
   let paragraphs = container.find('p')
     .map((i, el) => $(el).text().trim())
     .get()
-    .filter((t) => {
-      if (t.length < 40) return false; // skip tiny fragments
-      const lower = t.toLowerCase();
-      return !blacklist.some(bad => lower.includes(bad));
-    });
-
-  // Remove dateline/credit intros (first paragraph if matches pattern)
-  if (paragraphs.length) {
-    const datelinePattern = /^(by\s+[A-Z][a-z]+|[A-Z]{2,},\s+\w+\s+\d{1,2},\s+\d{4})/i;
-    if (datelinePattern.test(paragraphs[0])) {
-      paragraphs.shift();
-    }
-  }
+    .filter((t) => t.length >= 40 && !isCreditLine(t));
 
   return paragraphs.join('\n\n');
 };
