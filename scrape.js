@@ -23,7 +23,7 @@ const cleanArticle = ($, container) => {
   // Remove obvious non-article elements
   container.find('aside, footer, form, .newsletter, .popup, nav, header, script, style').remove();
 
-  // Extract and filter paragraphs
+  // Keywords that usually mean it's fluff or a plug
   const blacklist = [
     'newsletter',
     'subscribe',
@@ -36,7 +36,8 @@ const cleanArticle = ($, container) => {
     'sponsored'
   ];
 
-  const paragraphs = container.find('p')
+  // Extract paragraphs
+  let paragraphs = container.find('p')
     .map((i, el) => $(el).text().trim())
     .get()
     .filter((t) => {
@@ -44,6 +45,14 @@ const cleanArticle = ($, container) => {
       const lower = t.toLowerCase();
       return !blacklist.some(bad => lower.includes(bad));
     });
+
+  // Remove dateline/credit intros (first paragraph if matches pattern)
+  if (paragraphs.length) {
+    const datelinePattern = /^(by\s+[A-Z][a-z]+|[A-Z]{2,},\s+\w+\s+\d{1,2},\s+\d{4})/i;
+    if (datelinePattern.test(paragraphs[0])) {
+      paragraphs.shift();
+    }
+  }
 
   return paragraphs.join('\n\n');
 };
